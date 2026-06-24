@@ -1,4 +1,5 @@
 sensor/secrets.h
+infrastructure/.env
 .DS_Store
 .pio/
 .vscode/
