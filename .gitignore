@@ -1,0 +1,11 @@
+sensor/secrets.h
+.DS_Store
+.pio/
+.vscode/
+
+
+*.md
+!README.md
+
+data/
+log/
