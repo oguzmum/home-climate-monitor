@@ -9,7 +9,7 @@
 #define DHT_TYPE DHT11
 #define LED_PIN 2
 
-const unsigned long PUBLISH_INTERVAL_MS = 60000; //60s
+const unsigned long PUBLISH_INTERVAL_MS = 30000; //30s
 
 char roomName[32] = "unknown";
 String climateTopic;
