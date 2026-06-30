@@ -110,5 +110,5 @@ docker compose up -d
 | Hardware | Dashboard |
 |---|---|
 | ![ESP32 + DHT11 on breadboard](./images/breadboard-esp32-dht11.PNG) | ![Grafana dashboard](./images/grafana-dashboard.png) |
-| ESP32 sensor node wired up with DHT11 | Grafana showing temperature & humidity over time |
+| ESP32 sensor node wired up with DHT11 | Grafana showing temperature & humidity over time (A json of the dashboard can be found [here](./infrastructure/grafana-dashboard.json))|
 
