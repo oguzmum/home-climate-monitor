@@ -1,15 +1,22 @@
 # Home Climate Monitor
 
-My idea for this project: distributed sensor nodes → MQTT → time-series DB → Grafana. Plus a dedicated e-ink display that shows live room climate around the clock. 
+My idea for this project: distributed sensor nodes → MQTT → time-series DB → Grafana. Plus a dedicated e-ink display that shows live room climate around the clock.
+
+The broker and backend stack (Mosquitto, Telegraf, InfluxDB, Grafana) run on my self-hosted home server. Each ESP32 sensor node connects over WiFi and publishes data directly to it.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A["ESP32 + DHT11<br/>(per room)"] -->|"MQTT publish<br/>home/sensors/&lt;room&gt;/climate"| B["Mosquitto<br/>(Broker)"]
-    B --> C["Telegraf<br/>(Bridge)"]
-    C --> D["InfluxDB<br/>(Time-series DB)"]
-    D --> E["Grafana<br/>(Web Dashboard)"]
+    A["ESP32 + DHT11<br/>(per room)"] -->|"MQTT publish<br/>home/sensors/&lt;room&gt;/climate"| B
+
+    subgraph server["Home Server"]
+        B["Mosquitto<br/>(Broker)"]
+        B --> C["Telegraf<br/>(Bridge)"]
+        C --> D["InfluxDB<br/>(Time-series DB)"]
+        D --> E["Grafana<br/>(Web Dashboard)"]
+    end
+
     E --> F["ESP32 + E-Ink<br/>(24/7 display)"]
 ```
 
@@ -95,3 +102,13 @@ The Mosquitto broker, Telegraf, and InfluxDB run via Docker Compose:
 cd infrastructure/
 docker compose up -d
 ```
+
+---
+
+## Gallery
+
+| Hardware | Dashboard |
+|---|---|
+| ![ESP32 + DHT11 on breadboard](./images/breadboard-esp32-dht11.PNG) | ![Grafana dashboard](./images/grafana-dashboard.png) |
+| ESP32 sensor node wired up with DHT11 | Grafana showing temperature & humidity over time |
+
