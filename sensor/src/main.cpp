@@ -3,13 +3,14 @@
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
+#include <esp_sleep.h>
 #include "../secrets.h"
 
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
-#define LED_PIN 2
 
-const unsigned long PUBLISH_INTERVAL_MS = 30000; //30s
+#define uS_TO_S_FACTOR 1000000ULL
+const uint64_t DEEP_SLEEP_INTERVAL_S = 60;
 
 char roomName[32] = "unknown";
 String climateTopic;
@@ -19,15 +20,13 @@ DHT dht(DHT_PIN, DHT_TYPE);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-unsigned long lastPublishTime = 0;
-
-void blinkLed(int times, int onDurationMs, int offDurationMs) {
-    for (int i = 0; i < times; i++) {
-        digitalWrite(LED_PIN, HIGH);
-        delay(onDurationMs);
-        digitalWrite(LED_PIN, LOW);
-        if (i < times - 1) delay(offDurationMs);
-    }
+void goToSleep() {
+    mqttClient.disconnect();
+    WiFi.disconnect(true);
+    Serial.println("Going to deep sleep...");
+    Serial.flush();
+    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_INTERVAL_S * uS_TO_S_FACTOR);
+    esp_deep_sleep_start();
 }
 
 void publishStatus(const char* status) {
@@ -40,8 +39,12 @@ void publishStatus(const char* status) {
     mqttClient.publish(statusTopic.c_str(), payload, payloadLength);
 }
 
-void connectToMqtt() {
-    while (!mqttClient.connected()) {
+bool connectToMqtt() {
+    const int MAX_ATTEMPTS = 5;
+    int attempts = 0;
+
+    while (!mqttClient.connected() && attempts < MAX_ATTEMPTS) {
+        attempts++;
         Serial.print("Connecting to MQTT broker...");
         String clientId = "esp32-" + String(roomName) + "-" + String(random(0xffff), HEX);
 
@@ -55,15 +58,15 @@ void connectToMqtt() {
         if (connected) {
             Serial.println("connected!");
             publishStatus("online");
-            digitalWrite(LED_PIN, HIGH);
         } else {
             Serial.print("failed, rc=");
             Serial.print(mqttClient.state());
             Serial.println(" -> retrying in 5s");
-            blinkLed(2, 500, 500); // 2 slow blinks = no MQTT
             delay(4000);
         }
     }
+
+    return mqttClient.connected();
 }
 
 void connectToWifi() {
@@ -75,6 +78,7 @@ void connectToWifi() {
     WiFiManager wifiManager;
     WiFiManagerParameter roomNameParam("room", "Room Name", savedRoomName.c_str(), 32);
     wifiManager.addParameter(&roomNameParam);
+    wifiManager.setConfigPortalTimeout(180); // don't sit in AP mode forever on battery
 
     bool connected;
     if (savedRoomName.length() == 0) {
@@ -85,7 +89,6 @@ void connectToWifi() {
 
     if (!connected) {
         Serial.println("WiFi connection failed, restarting...");
-        blinkLed(5, 100, 100); // 5 fast blinks = no WiFi
         delay(500);
         ESP.restart();
     }
@@ -99,26 +102,6 @@ void connectToWifi() {
     }
 
     strlcpy(roomName, savedRoomName.length() > 0 ? savedRoomName.c_str() : "unknown", sizeof(roomName));
-}
-
-void setup() {
-    Serial.begin(115200);
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
-    dht.begin();
-
-    connectToWifi();
-
-    climateTopic = "home/sensors/" + String(roomName) + "/climate";
-    statusTopic = "home/sensors/" + String(roomName) + "/status";
-
-    Serial.print("Room: ");
-    Serial.println(roomName);
-    Serial.print("Topic: ");
-    Serial.println(climateTopic);
-
-    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    connectToMqtt();
 }
 
 void publishClimateData(float temperature, float humidity) {
@@ -139,28 +122,26 @@ void publishClimateData(float temperature, float humidity) {
 
     if (!success) {
         publishStatus("publish_error");
-        blinkLed(3, 200, 200); // 3 medium blinks = publish failed
-        digitalWrite(LED_PIN, HIGH);
     }
 }
 
-void loop() {
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi lost, restarting...");
-        blinkLed(5, 100, 100); // 5 fast blinks = no WiFi
-        delay(500);
-        ESP.restart();
-    }
+void setup() {
+    Serial.begin(115200);
+    dht.begin();
 
-    if (!mqttClient.connected()) {
-        connectToMqtt();
-    }
-    mqttClient.loop();
+    connectToWifi();
 
-    unsigned long currentTime = millis();
-    if (currentTime - lastPublishTime >= PUBLISH_INTERVAL_MS) {
-        lastPublishTime = currentTime;
+    climateTopic = "home/sensors/" + String(roomName) + "/climate";
+    statusTopic = "home/sensors/" + String(roomName) + "/status";
 
+    Serial.print("Room: ");
+    Serial.println(roomName);
+    Serial.print("Topic: ");
+    Serial.println(climateTopic);
+
+    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+
+    if (connectToMqtt()) {
         float humidity = dht.readHumidity();
         float temperature = dht.readTemperature();
 
@@ -169,8 +150,15 @@ void loop() {
         } else {
             Serial.println("Failed to read from DHT11 sensor!");
             publishStatus("sensor_error");
-            blinkLed(3, 100, 100); // 3 fast blinks = sensor error
-            digitalWrite(LED_PIN, HIGH);
         }
+    } else {
+        Serial.println("Could not reach MQTT broker, skipping this cycle.");
+		publishStatus("could_not_connect_to_mqtt");
     }
+
+    goToSleep();
+}
+
+void loop() {
+    // never reached: deep sleep resets the chip, which re-runs setup()
 }

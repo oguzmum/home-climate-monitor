@@ -84,16 +84,6 @@ Each node also publishes to `home/sensors/<room>/status`. Subscribe to all rooms
 mosquitto_sub -h <broker-ip> -t "home/sensors/+/status"
 ```
 
-The onboard LED (GPIO 2) signals the current state:
-
-| Pattern | Meaning |
-|---|---|
-| Solid on | Running normally |
-| 5× fast blink | No WiFi |
-| 2× slow blink | MQTT connection failed |
-| 3× medium blink | Publish failed |
-| 3× fast blink | Sensor read error |
-
 ## Infrastructure
 
 The Mosquitto broker, Telegraf, and InfluxDB run via Docker Compose:
@@ -112,3 +102,40 @@ docker compose up -d
 | ![ESP32 + DHT11 on breadboard](./images/breadboard-esp32-dht11.PNG) | ![Grafana dashboard](./images/grafana-dashboard.png) |
 | ESP32 sensor node wired up with DHT11 | Grafana showing temperature & humidity over time (A json of the dashboard can be found [here](./infrastructure/grafana-dashboard.json))|
 
+---
+
+## Power consumption & deep sleep
+
+First I'll use **9V batteries**, which has a small capacity (~500 mAh) and can't sustain a WiFi-connected ESP32 running continuously for very long. To stretch battery life I used the ESP32's **deep sleep** instead of an always-on loop.
+
+**Roughly how long the battery will last:**
+
+This is a rough estimate, not a lab measurement - actual runtime depends a lot on the specific battery and board.
+
+Assumptions:
+
+| Parameter | Value |
+|---|---|
+| Wake interval `T` |60 s |
+| Active time per cycle `t_active` (WiFi + MQTT + DHT read) | ~3 s |
+| Active current `I_active` (WiFi radio + CPU) | ~150 mA |
+| Deep sleep current `I_sleep` | 0.01 mA (bare ESP32) up to ~8 mA (typical DevKit board, onboard LDO + USB-UART chip keep drawing current even in deep sleep) |
+| 9V battery capacity | ~500 mAh (standard alkaline) |
+
+Average current draw:
+
+```
+I_avg = (t_active × I_active + t_sleep × I_sleep) / T
+```
+
+- **Best case** (bare ESP32 module, minimal sleep draw):
+  `I_avg = (3s × 150mA + (60s - 3s) × 0.01mA) / 60s ≈ 7.5 mA`
+  → `500 mAh / 7.5 mA ≈ 66.6 h` (**~2.7 days**)
+
+- **Realistic case** (stock `esp32dev` board - the onboard voltage regulator and USB-serial chip keep drawing power in deep sleep too):
+  `I_avg = (3s × 150mA + 57s × 8mA) / 60s ≈ 15.1 mA`
+  → `500 mAh / 15.1 mA ≈ 33 h` (**~1.4 days**)
+
+For comparison, without deep sleep the node draws ~150 mA continuously, which would drain the same battery in about `500 mAh / 150 mA ≈ 3.3 h`.
+
+For the long run I'll switch to a larger battery pack :D
